@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SecureVault</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root { --indigo: #4f46e5; }
+    * { box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; }
+
+    /* Sidebar */
+    #sidebar { width: 220px; flex-shrink: 0; }
+
+    /* Card-like bank card in card section */
+    .payment-card {
+      background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+      border-radius: 16px;
+      padding: 24px;
+      color: white;
+      position: relative;
+      overflow: hidden;
+      min-height: 140px;
+    }
+    .payment-card.credit { background: linear-gradient(135deg, #1a1a2e 0%, #7c3aed 100%); }
+    .payment-card::before {
+      content: '';
+      position: absolute; top: -40px; right: -40px;
+      width: 160px; height: 160px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.08);
+    }
+    .payment-card::after {
+      content: '';
+      position: absolute; bottom: -60px; right: 20px;
+      width: 200px; height: 200px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.05);
+    }
+
+    /* Scrollable main area */
+    #main-content { overflow-y: auto; height: 100vh; }
+
+    /* Toasts */
+    #toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+    .toast { padding: 12px 20px; border-radius: 8px; color: white; font-size: 14px; font-weight: 500;
+             box-shadow: 0 4px 12px rgba(0,0,0,0.15); animation: slideIn .2s ease; min-width: 220px; }
+    .toast-success { background: #16a34a; }
+    .toast-error   { background: #dc2626; }
+    .toast-info    { background: #2563eb; }
+    @keyframes slideIn { from { transform: translateX(60px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* Modal backdrop */
+    #modal-overlay { backdrop-filter: blur(4px); }
+
+    /* Input focus */
+    input:focus, select:focus, textarea:focus { outline: 2px solid #4f46e5; outline-offset: 1px; }
+
+    /* Nav active */
+    .nav-item.active { background: rgba(255,255,255,0.15); }
+    .nav-item:hover  { background: rgba(255,255,255,0.10); }
+
+    /* Password strength bar */
+    #strength-bar div { transition: width .3s ease; }
+
+    /* Spinner */
+    .spinner { border: 3px solid rgba(255,255,255,0.3); border-top-color: white;
+               border-radius: 50%; width: 18px; height: 18px; animation: spin .6s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Category badge colors */
+    .cat-email    { background:#dbeafe; color:#1d4ed8; }
+    .cat-social   { background:#fce7f3; color:#9d174d; }
+    .cat-banking  { background:#d1fae5; color:#065f46; }
+    .cat-shopping { background:#fef3c7; color:#92400e; }
+    .cat-general  { background:#f3f4f6; color:#374151; }
+    .cat-work     { background:#ede9fe; color:#5b21b6; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+<!-- ═══════════════ LOCK SCREEN ═══════════════ -->
+<div id="lock-screen" class="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-900 via-indigo-700 to-purple-800">
+  <div class="bg-white rounded-2xl shadow-2xl p-10 w-full max-w-md mx-4">
+    <!-- Logo -->
+    <div class="flex flex-col items-center mb-8">
+      <div class="w-20 h-20 bg-indigo-600 rounded-full flex items-center justify-center mb-4 shadow-lg">
+        <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+        </svg>
+      </div>
+      <h1 class="text-3xl font-bold text-slate-900">SecureVault</h1>
+      <p id="lock-subtitle" class="text-slate-500 mt-1 text-sm text-center">Your passwords, cards &amp; bank details — encrypted &amp; safe.</p>
+    </div>
+
+    <div id="lock-error" class="hidden mb-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm font-medium"></div>
+
+    <!-- Password field -->
+    <div class="relative mb-4">
+      <input id="master-password" type="password" placeholder="Master password"
+        class="w-full border border-slate-300 rounded-xl px-4 py-3 pr-12 text-base focus:border-indigo-500" />
+      <button onclick="toggleVisibility('master-password', this)" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+        <svg class="w-5 h-5" id="eye-icon-master" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Confirm password (setup only) -->
+    <div id="confirm-wrap" class="hidden mb-4">
+      <input id="confirm-password" type="password" placeholder="Confirm master password"
+        class="w-full border border-slate-300 rounded-xl px-4 py-3 text-base focus:border-indigo-500" />
+      <p class="text-xs text-slate-500 mt-2 px-1">Choose a strong password — it encrypts all your data. If forgotten, data cannot be recovered.</p>
+    </div>
+
+    <button id="lock-btn" onclick="handleLockAction()"
+      class="w-full bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold py-3 rounded-xl text-base transition-colors flex items-center justify-center gap-2">
+      <span id="lock-btn-text">Unlock Vault</span>
+    </button>
+  </div>
+</div>
+
+<!-- ═══════════════ MAIN APP ═══════════════ -->
+<div id="app" class="hidden flex h-screen overflow-hidden">
+
+  <!-- Sidebar -->
+  <aside id="sidebar" class="bg-indigo-900 text-white flex flex-col py-6 px-3">
+    <div class="flex items-center gap-2 px-3 mb-8">
+      <div class="w-8 h-8 bg-indigo-400 rounded-lg flex items-center justify-center">
+        <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+        </svg>
+      </div>
+      <span class="font-bold text-lg">SecureVault</span>
+    </div>
+
+    <nav class="flex flex-col gap-1 flex-1">
+      <button onclick="switchSection('logins')" class="nav-item active flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-left w-full" data-section="logins">
+        <svg class="w-5 h-5 text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+        </svg>
+        <span class="text-sm font-medium">Passwords</span>
+        <span id="badge-logins" class="ml-auto bg-indigo-700 text-indigo-200 text-xs rounded-full px-2 py-0.5">0</span>
+      </button>
+
+      <button onclick="switchSection('cards')" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-left w-full" data-section="cards">
+        <svg class="w-5 h-5 text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>
+        </svg>
+        <span class="text-sm font-medium">Cards</span>
+        <span id="badge-cards" class="ml-auto bg-indigo-700 text-indigo-200 text-xs rounded-full px-2 py-0.5">0</span>
+      </button>
+
+      <button onclick="switchSection('banks')" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-left w-full" data-section="banks">
+        <svg class="w-5 h-5 text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"/>
+        </svg>
+        <span class="text-sm font-medium">Bank Accounts</span>
+        <span id="badge-banks" class="ml-auto bg-indigo-700 text-indigo-200 text-xs rounded-full px-2 py-0.5">0</span>
+      </button>
+    </nav>
+
+    <button onclick="lockVault()"
+      class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-indigo-300 hover:bg-white/10 hover:text-white transition-colors text-sm font-medium w-full">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+      </svg>
+      Lock Vault
+    </button>
+  </aside>
+
+  <!-- Main content -->
+  <div id="main-content" class="flex-1 flex flex-col bg-slate-50">
+    <!-- Top bar -->
+    <header class="bg-white border-b border-slate-200 px-6 py-4 flex items-center gap-4 sticky top-0 z-10">
+      <div>
+        <h2 id="section-title" class="text-xl font-bold text-slate-900">Passwords</h2>
+        <p id="section-sub" class="text-xs text-slate-500">Login credentials for your websites &amp; apps</p>
+      </div>
+      <div class="flex-1"></div>
+      <!-- Search -->
+      <div class="relative w-64">
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+        </svg>
+        <input id="search-input" type="text" placeholder="Search…" oninput="renderItems()"
+          class="w-full border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:border-indigo-400 bg-slate-50" />
+      </div>
+      <button onclick="openAddModal()"
+        class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+        </svg>
+        Add New
+      </button>
+    </header>
+
+    <!-- Items grid -->
+    <div class="p-6 flex-1">
+      <div id="items-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+      <div id="empty-state" class="hidden flex flex-col items-center justify-center py-24 text-slate-400">
+        <svg class="w-16 h-16 mb-4 text-slate-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+        </svg>
+        <p class="text-lg font-medium" id="empty-title">Nothing here yet</p>
+        <p class="text-sm mt-1" id="empty-sub">Click <strong>Add New</strong> to get started.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ MODAL ═══════════════ -->
+<div id="modal-overlay" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+  <div id="modal-box" class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+      <h3 id="modal-title" class="text-lg font-bold text-slate-900"></h3>
+      <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 rounded-lg p-1">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div id="modal-body" class="overflow-y-auto px-6 py-4 flex-1"></div>
+    <div id="modal-footer" class="px-6 py-4 border-t border-slate-100 flex gap-3 justify-end"></div>
+  </div>
+</div>
+
+<!-- Toasts -->
+<div id="toast-container"></div>
+
+<script>
+'use strict';
+// ─────────────────────────────────────────
+// State
+// ─────────────────────────────────────────
+let token         = sessionStorage.getItem('sv_token');
+let currentSection = 'logins';
+let data          = { logins: [], cards: [], banks: [] };
+let editingId     = null;
+let viewingId     = null;
+let isSetup       = false;
+
+// ─────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────
+function mask(str, ch = '•') { return str ? ch.repeat(Math.max(str.length, 6)) : ''; }
+function maskCard(n) { return n ? '•••• •••• •••• ' + n.replace(/\s/g,'').slice(-4) : ''; }
+function maskAcct(n) { return n ? '••••••' + n.slice(-4) : ''; }
+
+function catClass(cat) {
+  const m = { email:'cat-email', social:'cat-social', banking:'cat-banking', shopping:'cat-shopping', work:'cat-work' };
+  return m[cat] || 'cat-general';
+}
+
+function esc(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function toggleVisibility(inputId, btn) {
+  const el = document.getElementById(inputId);
+  const showing = el.type === 'text';
+  el.type = showing ? 'password' : 'text';
+  btn.querySelector('svg').innerHTML = showing
+    ? `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>`
+    : `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/>`;
+}
+
+async function copyText(text, label) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(`${label} copied!`, 'success');
+  } catch { toast('Copy failed — please copy manually.', 'error'); }
+}
+
+function toast(msg, type = 'info') {
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+
+// ─────────────────────────────────────────
+// API
+// ─────────────────────────────────────────
+async function api(path, method = 'GET', body = null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (token) opts.headers['Authorization'] = `Bearer ${token}`;
+  if (body)  opts.body = JSON.stringify(body);
+  const res = await fetch(path, opts);
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || 'Request failed');
+  return json;
+}
+
+// ─────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────
+async function init() {
+  const status = await api('/api/auth/status');
+  isSetup = status.isSetup;
+
+  if (!isSetup) {
+    showSetupUI();
+  } else if (token) {
+    try {
+      await loadAllData();
+      showApp();
+    } catch {
+      showUnlockUI();
+    }
+  } else {
+    showUnlockUI();
+  }
+}
+
+function showSetupUI() {
+  document.getElementById('lock-subtitle').textContent = 'Create a master password to protect your vault.';
+  document.getElementById('lock-btn-text').textContent = 'Create Vault';
+  document.getElementById('confirm-wrap').classList.remove('hidden');
+}
+
+function showUnlockUI() {
+  document.getElementById('lock-subtitle').textContent = 'Enter your master password to unlock.';
+  document.getElementById('lock-btn-text').textContent = 'Unlock Vault';
+  document.getElementById('confirm-wrap').classList.add('hidden');
+  document.getElementById('lock-screen').classList.remove('hidden');
+  document.getElementById('app').classList.add('hidden');
+}
+
+function showApp() {
+  document.getElementById('lock-screen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  document.getElementById('app').classList.add('flex');
+  renderItems();
+  updateBadges();
+}
+
+// ─────────────────────────────────────────
+// Auth
+// ─────────────────────────────────────────
+async function handleLockAction() {
+  const btn  = document.getElementById('lock-btn');
+  const pass = document.getElementById('master-password').value;
+  const errEl = document.getElementById('lock-error');
+  errEl.classList.add('hidden');
+
+  if (!pass) { showLockError('Please enter your master password.'); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+
+  try {
+    if (!isSetup) {
+      // Setup
+      const confirm = document.getElementById('confirm-password').value;
+      if (pass.length < 8) { showLockError('Password must be at least 8 characters.'); return; }
+      if (pass !== confirm)  { showLockError('Passwords do not match.'); return; }
+      await api('/api/auth/setup', 'POST', { password: pass });
+      isSetup = true;
+    }
+    const { token: t } = await api('/api/auth/unlock', 'POST', { password: pass });
+    token = t;
+    sessionStorage.setItem('sv_token', token);
+    await loadAllData();
+    showApp();
+    document.getElementById('master-password').value = '';
+  } catch (e) {
+    showLockError(e.message);
+  } finally {
+    btn.disabled = false;
+    document.getElementById('lock-btn-text').textContent = isSetup ? 'Unlock Vault' : 'Create Vault';
+    btn.innerHTML = `<span id="lock-btn-text">${isSetup ? 'Unlock Vault' : 'Create Vault'}</span>`;
+  }
+}
+
+function showLockError(msg) {
+  const el = document.getElementById('lock-error');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+async function lockVault() {
+  try { await api('/api/auth/logout', 'POST'); } catch {}
+  token = null;
+  sessionStorage.removeItem('sv_token');
+  data = { logins: [], cards: [], banks: [] };
+  showUnlockUI();
+}
+
+// Enter key on lock screen
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !document.getElementById('lock-screen').classList.contains('hidden')) {
+    handleLockAction();
+  }
+});
+
+// ─────────────────────────────────────────
+// Data loading
+// ─────────────────────────────────────────
+async function loadAllData() {
+  const [logins, cards, banks] = await Promise.all([
+    api('/api/logins'),
+    api('/api/cards'),
+    api('/api/banks'),
+  ]);
+  data.logins = logins;
+  data.cards  = cards;
+  data.banks  = banks;
+}
+
+function updateBadges() {
+  document.getElementById('badge-logins').textContent = data.logins.length;
+  document.getElementById('badge-cards').textContent  = data.cards.length;
+  document.getElementById('badge-banks').textContent  = data.banks.length;
+}
+
+// ─────────────────────────────────────────
+// Navigation
+// ─────────────────────────────────────────
+const sectionMeta = {
+  logins: { title: 'Passwords',      sub: 'Login credentials for your websites & apps' },
+  cards:  { title: 'Cards',          sub: 'Debit & credit card details' },
+  banks:  { title: 'Bank Accounts',  sub: 'Bank account & net banking credentials' },
+};
+
+function switchSection(sec) {
+  currentSection = sec;
+  document.querySelectorAll('.nav-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.section === sec);
+  });
+  const meta = sectionMeta[sec];
+  document.getElementById('section-title').textContent = meta.title;
+  document.getElementById('section-sub').textContent   = meta.sub;
+  document.getElementById('search-input').value = '';
+  renderItems();
+}
+
+// ─────────────────────────────────────────
+// Render items
+// ─────────────────────────────────────────
+function renderItems() {
+  const q     = document.getElementById('search-input').value.toLowerCase();
+  const grid  = document.getElementById('items-grid');
+  const empty = document.getElementById('empty-state');
+
+  let items = data[currentSection];
+
+  if (q) {
+    items = items.filter(it => {
+      if (currentSection === 'logins') return it.website_name.toLowerCase().includes(q) || (it.username || '').toLowerCase().includes(q);
+      if (currentSection === 'cards')  return (it.bank_name || '').toLowerCase().includes(q) || (it.card_holder_name || '').toLowerCase().includes(q);
+      if (currentSection === 'banks')  return it.bank_name.toLowerCase().includes(q) || (it.account_holder_name || '').toLowerCase().includes(q);
+      return false;
+    });
+  }
+
+  grid.innerHTML = '';
+
+  if (!items.length) {
+    empty.classList.remove('hidden');
+    document.getElementById('empty-title').textContent = q ? 'No results found' : 'Nothing here yet';
+    document.getElementById('empty-sub').textContent   = q ? 'Try a different search term.' : 'Click Add New to get started.';
+    return;
+  }
+  empty.classList.add('hidden');
+
+  items.forEach(item => {
+    const card = document.createElement('div');
+    card.className = 'bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow p-4 flex flex-col gap-3';
+    card.innerHTML = cardHTML(item);
+    grid.appendChild(card);
+  });
+}
+
+function cardHTML(item) {
+  if (currentSection === 'logins') {
+    const url = item.website_url ? new URL(item.website_url.startsWith('http') ? item.website_url : 'https://'+item.website_url).hostname : '';
+    return `
+      <div class="flex items-start justify-between">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center flex-shrink-0">
+            ${url
+              ? `<img src="https://www.google.com/s2/favicons?domain=${url}&sz=32" class="w-6 h-6" onerror="this.style.display='none';this.nextSibling.style.display='flex'" />`
+              : ''}
+            <span class="text-indigo-600 font-bold text-sm" ${url ? 'style="display:none"' : ''}>${(item.website_name[0]||'?').toUpperCase()}</span>
+          </div>
+          <div class="min-w-0">
+            <p class="font-semibold text-slate-900 truncate">${esc(item.website_name)}</p>
+            <p class="text-xs text-slate-500 truncate">${esc(item.username)}</p>
+          </div>
+        </div>
+        <span class="text-xs px-2 py-1 rounded-full font-medium flex-shrink-0 ${catClass(item.category)}">${esc(item.category)}</span>
+      </div>
+      <div class="flex gap-2 pt-1 border-t border-slate-100">
+        <button onclick='viewItem(${item.id})' class="flex-1 text-xs text-indigo-600 hover:bg-indigo-50 py-1.5 rounded-lg font-medium transition-colors">View</button>
+        <button onclick='copyText(${JSON.stringify(item.password)}, "Password")' class="flex-1 text-xs text-slate-600 hover:bg-slate-100 py-1.5 rounded-lg font-medium transition-colors">Copy PW</button>
+        <button onclick='editItem(${item.id})' class="flex-1 text-xs text-amber-600 hover:bg-amber-50 py-1.5 rounded-lg font-medium transition-colors">Edit</button>
+        <button onclick='deleteItem(${item.id})' class="flex-1 text-xs text-red-500 hover:bg-red-50 py-1.5 rounded-lg font-medium transition-colors">Delete</button>
+      </div>`;
+  }
+
+  if (currentSection === 'cards') {
+    const isCredit = item.card_type === 'credit';
+    const last4 = (item.card_number || '').replace(/\s/g,'').slice(-4);
+    return `
+      <div class="payment-card ${isCredit ? 'credit' : ''}">
+        <div class="flex justify-between items-start mb-6">
+          <div>
+            <p class="text-white/70 text-xs">${esc(item.bank_name) || 'Bank'}</p>
+            <p class="font-semibold text-sm capitalize">${esc(item.card_type)} card</p>
+          </div>
+          <span class="text-white/80 font-bold text-sm">${esc(item.card_network) || ''}</span>
+        </div>
+        <p class="font-mono text-base tracking-widest mb-3">•••• •••• •••• ${esc(last4)}</p>
+        <div class="flex justify-between items-end">
+          <div>
+            <p class="text-white/60 text-xs">CARD HOLDER</p>
+            <p class="text-sm font-medium">${esc(item.card_holder_name)}</p>
+          </div>
+          <div class="text-right">
+            <p class="text-white/60 text-xs">EXPIRES</p>
+            <p class="text-sm font-medium">${esc(item.expiry_date)}</p>
+          </div>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <button onclick='viewItem(${item.id})' class="flex-1 text-xs text-indigo-600 hover:bg-indigo-50 py-1.5 rounded-lg font-medium transition-colors">View Details</button>
+        <button onclick='editItem(${item.id})' class="flex-1 text-xs text-amber-600 hover:bg-amber-50 py-1.5 rounded-lg font-medium transition-colors">Edit</button>
+        <button onclick='deleteItem(${item.id})' class="flex-1 text-xs text-red-500 hover:bg-red-50 py-1.5 rounded-lg font-medium transition-colors">Delete</button>
+      </div>`;
+  }
+
+  if (currentSection === 'banks') {
+    return `
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
+          <svg class="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z"/>
+          </svg>
+        </div>
+        <div class="min-w-0 flex-1">
+          <p class="font-semibold text-slate-900 truncate">${esc(item.bank_name)}</p>
+          <p class="text-xs text-slate-500">${maskAcct(item.account_number)} &nbsp;·&nbsp; <span class="capitalize">${esc(item.account_type)}</span></p>
+          ${item.branch_name ? `<p class="text-xs text-slate-400 truncate">${esc(item.branch_name)}</p>` : ''}
+        </div>
+      </div>
+      <div class="flex gap-2 border-t border-slate-100 pt-3">
+        <button onclick='viewItem(${item.id})' class="flex-1 text-xs text-indigo-600 hover:bg-indigo-50 py-1.5 rounded-lg font-medium transition-colors">View</button>
+        <button onclick='copyText(${JSON.stringify(item.account_number)}, "Account number")' class="flex-1 text-xs text-slate-600 hover:bg-slate-100 py-1.5 rounded-lg font-medium transition-colors">Copy Acct</button>
+        <button onclick='editItem(${item.id})' class="flex-1 text-xs text-amber-600 hover:bg-amber-50 py-1.5 rounded-lg font-medium transition-colors">Edit</button>
+        <button onclick='deleteItem(${item.id})' class="flex-1 text-xs text-red-500 hover:bg-red-50 py-1.5 rounded-lg font-medium transition-colors">Delete</button>
+      </div>`;
+  }
+}
+
+// ─────────────────────────────────────────
+// Modal helpers
+// ─────────────────────────────────────────
+function openModal(title, bodyHTML, footerHTML) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').innerHTML    = bodyHTML;
+  document.getElementById('modal-footer').innerHTML  = footerHTML;
+  document.getElementById('modal-overlay').classList.remove('hidden');
+}
+function closeModal() {
+  document.getElementById('modal-overlay').classList.add('hidden');
+  editingId = viewingId = null;
+}
+document.getElementById('modal-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+});
+
+// ─────────────────────────────────────────
+// Shared field builder
+// ─────────────────────────────────────────
+function fieldRow(label, id, opts = {}) {
+  const { type='text', placeholder='', value='', required=false, options=null, rows=0, hint='' } = opts;
+  const req = required ? '<span class="text-red-500 ml-0.5">*</span>' : '';
+  const base = 'w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:border-indigo-400';
+
+  let input;
+  if (options) {
+    const opts2 = options.map(o => `<option value="${o.value}" ${value===o.value?'selected':''}>${o.label}</option>`).join('');
+    input = `<select id="${id}" class="${base}">${opts2}</select>`;
+  } else if (rows > 0) {
+    input = `<textarea id="${id}" rows="${rows}" placeholder="${placeholder}" class="${base}">${esc(value)}</textarea>`;
+  } else if (type === 'password') {
+    input = `
+      <div class="relative">
+        <input id="${id}" type="password" placeholder="${placeholder}" value="${esc(value)}" class="${base} pr-10" />
+        <button type="button" onclick="toggleVisibility('${id}', this)" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+          </svg>
+        </button>
+      </div>`;
+  } else {
+    input = `<input id="${id}" type="${type}" placeholder="${placeholder}" value="${esc(value)}" class="${base}" />`;
+  }
+
+  return `
+    <div class="mb-3">
+      <label class="block text-xs font-semibold text-slate-600 mb-1">${label}${req}</label>
+      ${input}
+      ${hint ? `<p class="text-xs text-slate-400 mt-1">${hint}</p>` : ''}
+    </div>`;
+}
+
+function detailRow(label, value, masked = false, copyLabel = '') {
+  if (!value && value !== 0) return '';
+  const id = 'dr_' + Math.random().toString(36).slice(2);
+  const displayVal = masked ? mask(value) : esc(value);
+  return `
+    <div class="flex items-center justify-between py-2.5 border-b border-slate-100 last:border-0">
+      <div class="min-w-0 flex-1">
+        <p class="text-xs font-semibold text-slate-500">${label}</p>
+        <p id="${id}" class="text-sm text-slate-800 font-mono mt-0.5 break-all">${displayVal}</p>
+      </div>
+      <div class="flex gap-1 ml-3 flex-shrink-0">
+        ${masked ? `<button onclick="toggleDetail('${id}', ${JSON.stringify(value)})" class="text-xs text-indigo-500 hover:text-indigo-700 px-2 py-1 rounded hover:bg-indigo-50 font-medium" title="Show/hide">👁</button>` : ''}
+        ${copyLabel ? `<button onclick="copyText(${JSON.stringify(value)}, '${copyLabel}')" class="text-xs text-slate-500 hover:text-slate-700 px-2 py-1 rounded hover:bg-slate-100 font-medium" title="Copy">⎘</button>` : ''}
+      </div>
+    </div>`;
+}
+
+function toggleDetail(id, value) {
+  const el = document.getElementById(id);
+  const isHidden = el.textContent === mask(value);
+  el.textContent = isHidden ? value : mask(value);
+}
+
+// ─────────────────────────────────────────
+// Password generator
+// ─────────────────────────────────────────
+function generatePassword() {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+[]{}|;:,.<>?';
+  let pw = '';
+  const arr = new Uint8Array(18);
+  crypto.getRandomValues(arr);
+  arr.forEach(b => pw += chars[b % chars.length]);
+  const el = document.getElementById('f_password');
+  if (el) { el.value = pw; el.type = 'text'; }
+}
+
+// ─────────────────────────────────────────
+// Login CRUD
+// ─────────────────────────────────────────
+function openAddModal() {
+  editingId = null;
+  if (currentSection === 'logins') openLoginForm();
+  else if (currentSection === 'cards') openCardForm();
+  else openBankForm();
+}
+
+function openLoginForm(item = null) {
+  const body = `
+    ${fieldRow('Website / App Name', 'f_website_name', { placeholder: 'e.g. Google', value: item?.website_name, required: true })}
+    ${fieldRow('Website URL', 'f_website_url', { placeholder: 'https://google.com', value: item?.website_url })}
+    ${fieldRow('Category', 'f_category', { value: item?.category || 'general', options: [
+      { value:'general', label:'General' }, { value:'email', label:'Email' }, { value:'social', label:'Social Media' },
+      { value:'banking', label:'Banking' }, { value:'shopping', label:'Shopping' }, { value:'work', label:'Work' }
+    ]})}
+    ${fieldRow('Username / Email', 'f_username', { placeholder: 'user@example.com', value: item?.username, required: true })}
+    <div class="mb-3">
+      <label class="block text-xs font-semibold text-slate-600 mb-1">Password <span class="text-red-500">*</span></label>
+      <div class="relative">
+        <input id="f_password" type="password" placeholder="Password" value="${esc(item?.password)}"
+          class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:border-indigo-400 pr-20" />
+        <div class="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
+          <button type="button" onclick="toggleVisibility('f_password', this)" class="text-slate-400 hover:text-slate-600">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+            </svg>
+          </button>
+          <button type="button" onclick="generatePassword()" title="Generate strong password" class="text-indigo-500 hover:text-indigo-700">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    ${fieldRow('Notes', 'f_notes', { rows: 2, placeholder: 'Optional notes…', value: item?.notes })}`;
+
+  openModal(item ? 'Edit Password' : 'Add Password', body, `
+    <button onclick="closeModal()" class="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Cancel</button>
+    <button onclick="saveLogin()" class="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold">Save</button>`);
+}
+
+async function saveLogin() {
+  const body = {
+    website_name: document.getElementById('f_website_name').value.trim(),
+    website_url:  document.getElementById('f_website_url').value.trim(),
+    category:     document.getElementById('f_category').value,
+    username:     document.getElementById('f_username').value.trim(),
+    password:     document.getElementById('f_password').value,
+    notes:        document.getElementById('f_notes').value.trim(),
+  };
+  if (!body.website_name || !body.username || !body.password) {
+    toast('Website name, username, and password are required.', 'error'); return;
+  }
+  try {
+    if (editingId) await api(`/api/logins/${editingId}`, 'PUT', body);
+    else           await api('/api/logins', 'POST', body);
+    data.logins = await api('/api/logins');
+    closeModal(); renderItems(); updateBadges();
+    toast(editingId ? 'Password updated.' : 'Password saved.', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ─────────────────────────────────────────
+// Card CRUD
+// ─────────────────────────────────────────
+function openCardForm(item = null) {
+  const body = `
+    ${fieldRow('Bank Name', 'f_bank_name', { placeholder: 'e.g. HDFC Bank', value: item?.bank_name })}
+    <div class="grid grid-cols-2 gap-3">
+      ${fieldRow('Card Type', 'f_card_type', { value: item?.card_type || 'debit', options: [
+        { value:'debit', label:'Debit' }, { value:'credit', label:'Credit' }
+      ]})}
+      ${fieldRow('Network', 'f_card_network', { value: item?.card_network || '', options: [
+        { value:'', label:'Select…' }, { value:'Visa', label:'Visa' }, { value:'Mastercard', label:'Mastercard' },
+        { value:'RuPay', label:'RuPay' }, { value:'Amex', label:'Amex' }, { value:'Discover', label:'Discover' }
+      ]})}
+    </div>
+    ${fieldRow('Card Holder Name', 'f_card_holder_name', { placeholder: 'Name on card', value: item?.card_holder_name, required: true })}
+    ${fieldRow('Card Number', 'f_card_number', { placeholder: '•••• •••• •••• ••••', value: item?.card_number, required: true, hint: 'Stored encrypted — never shared.' })}
+    <div class="grid grid-cols-2 gap-3">
+      ${fieldRow('Expiry Date', 'f_expiry_date', { placeholder: 'MM/YY', value: item?.expiry_date, required: true })}
+      ${fieldRow('CVV', 'f_cvv', { type: 'password', placeholder: '•••', value: item?.cvv, required: true })}
+    </div>
+    ${fieldRow('ATM / Card PIN', 'f_pin', { type: 'password', placeholder: '••••', value: item?.pin, required: true })}`;
+
+  openModal(item ? 'Edit Card' : 'Add Card', body, `
+    <button onclick="closeModal()" class="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Cancel</button>
+    <button onclick="saveCard()" class="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold">Save</button>`);
+
+  // Auto-format card number
+  document.getElementById('f_card_number').addEventListener('input', function () {
+    this.value = this.value.replace(/\D/g,'').slice(0,16).replace(/(.{4})/g,'$1 ').trim();
+  });
+  // Auto-format expiry
+  document.getElementById('f_expiry_date').addEventListener('input', function () {
+    this.value = this.value.replace(/\D/g,'').slice(0,4).replace(/(\d{2})(\d)/,'$1/$2');
+  });
+}
+
+async function saveCard() {
+  const body = {
+    bank_name:        document.getElementById('f_bank_name').value.trim(),
+    card_type:        document.getElementById('f_card_type').value,
+    card_network:     document.getElementById('f_card_network').value,
+    card_holder_name: document.getElementById('f_card_holder_name').value.trim(),
+    card_number:      document.getElementById('f_card_number').value.trim(),
+    expiry_date:      document.getElementById('f_expiry_date').value.trim(),
+    cvv:              document.getElementById('f_cvv').value,
+    pin:              document.getElementById('f_pin').value,
+  };
+  if (!body.card_holder_name || !body.card_number || !body.expiry_date || !body.cvv || !body.pin) {
+    toast('Please fill in all required card fields.', 'error'); return;
+  }
+  try {
+    if (editingId) await api(`/api/cards/${editingId}`, 'PUT', body);
+    else           await api('/api/cards', 'POST', body);
+    data.cards = await api('/api/cards');
+    closeModal(); renderItems(); updateBadges();
+    toast(editingId ? 'Card updated.' : 'Card saved.', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ─────────────────────────────────────────
+// Bank CRUD
+// ─────────────────────────────────────────
+function openBankForm(item = null) {
+  const body = `
+    ${fieldRow('Bank Name', 'f_bank_name', { placeholder: 'e.g. State Bank of India', value: item?.bank_name, required: true })}
+    <div class="grid grid-cols-2 gap-3">
+      ${fieldRow('Branch Name', 'f_branch_name', { placeholder: 'e.g. MG Road Branch', value: item?.branch_name })}
+      ${fieldRow('Account Type', 'f_account_type', { value: item?.account_type || 'savings', options: [
+        { value:'savings', label:'Savings' }, { value:'current', label:'Current' }, { value:'salary', label:'Salary' }, { value:'fd', label:'Fixed Deposit' }
+      ]})}
+    </div>
+    ${fieldRow('Account Holder Name', 'f_account_holder_name', { placeholder: 'Full name', value: item?.account_holder_name, required: true })}
+    ${fieldRow('Account Number', 'f_account_number', { placeholder: 'Your account number', value: item?.account_number, required: true })}
+    ${fieldRow('IFSC Code', 'f_ifsc_code', { placeholder: 'e.g. SBIN0001234', value: item?.ifsc_code, required: true })}
+    <div class="border-t border-slate-100 pt-3 mt-1">
+      <p class="text-xs font-semibold text-slate-500 mb-2">Net Banking (optional)</p>
+      ${fieldRow('Net Banking Username', 'f_nb_username', { placeholder: 'Username / Customer ID', value: item?.net_banking_username })}
+      ${fieldRow('Net Banking Password', 'f_nb_password', { type: 'password', placeholder: 'Password', value: item?.net_banking_password })}
+    </div>`;
+
+  openModal(item ? 'Edit Bank Account' : 'Add Bank Account', body, `
+    <button onclick="closeModal()" class="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Cancel</button>
+    <button onclick="saveBank()" class="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold">Save</button>`);
+}
+
+async function saveBank() {
+  const body = {
+    bank_name:            document.getElementById('f_bank_name').value.trim(),
+    branch_name:          document.getElementById('f_branch_name').value.trim(),
+    account_type:         document.getElementById('f_account_type').value,
+    account_holder_name:  document.getElementById('f_account_holder_name').value.trim(),
+    account_number:       document.getElementById('f_account_number').value.trim(),
+    ifsc_code:            document.getElementById('f_ifsc_code').value.trim(),
+    net_banking_username: document.getElementById('f_nb_username').value.trim(),
+    net_banking_password: document.getElementById('f_nb_password').value,
+  };
+  if (!body.bank_name || !body.account_holder_name || !body.account_number || !body.ifsc_code) {
+    toast('Bank name, account holder, account number, and IFSC are required.', 'error'); return;
+  }
+  try {
+    if (editingId) await api(`/api/banks/${editingId}`, 'PUT', body);
+    else           await api('/api/banks', 'POST', body);
+    data.banks = await api('/api/banks');
+    closeModal(); renderItems(); updateBadges();
+    toast(editingId ? 'Bank account updated.' : 'Bank account saved.', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ─────────────────────────────────────────
+// View details
+// ─────────────────────────────────────────
+function viewItem(id) {
+  viewingId = id;
+  if (currentSection === 'logins') viewLogin(id);
+  else if (currentSection === 'cards') viewCard(id);
+  else viewBank(id);
+}
+
+function viewLogin(id) {
+  const item = data.logins.find(i => i.id === id);
+  if (!item) return;
+  const body = `
+    ${detailRow('Website', item.website_name)}
+    ${detailRow('URL', item.website_url)}
+    ${detailRow('Category', item.category)}
+    ${detailRow('Username / Email', item.username, false, 'Username')}
+    ${detailRow('Password', item.password, true, 'Password')}
+    ${item.notes ? detailRow('Notes', item.notes) : ''}`;
+  openModal(item.website_name, body, `
+    <button onclick="closeModal()" class="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Close</button>
+    <button onclick="closeModal();editItem(${id})" class="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold">Edit</button>`);
+}
+
+function viewCard(id) {
+  const item = data.cards.find(i => i.id === id);
+  if (!item) return;
+  const body = `
+    ${detailRow('Bank', item.bank_name)}
+    ${detailRow('Card Type', item.card_type)}
+    ${detailRow('Network', item.card_network)}
+    ${detailRow('Card Holder', item.card_holder_name)}
+    ${detailRow('Card Number', item.card_number, true, 'Card Number')}
+    ${detailRow('Expiry Date', item.expiry_date, false, 'Expiry')}
+    ${detailRow('CVV', item.cvv, true, 'CVV')}
+    ${detailRow('PIN', item.pin, true, 'PIN')}`;
+  openModal(item.bank_name || 'Card Details', body, `
+    <button onclick="closeModal()" class="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Close</button>
+    <button onclick="closeModal();editItem(${id})" class="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold">Edit</button>`);
+}
+
+function viewBank(id) {
+  const item = data.banks.find(i => i.id === id);
+  if (!item) return;
+  const body = `
+    ${detailRow('Bank Name', item.bank_name)}
+    ${detailRow('Branch', item.branch_name)}
+    ${detailRow('Account Type', item.account_type)}
+    ${detailRow('Account Holder', item.account_holder_name)}
+    ${detailRow('Account Number', item.account_number, true, 'Account Number')}
+    ${detailRow('IFSC Code', item.ifsc_code, false, 'IFSC')}
+    ${item.net_banking_username ? detailRow('Net Banking User', item.net_banking_username, false, 'NB Username') : ''}
+    ${item.net_banking_password ? detailRow('Net Banking Password', item.net_banking_password, true, 'NB Password') : ''}`;
+  openModal(item.bank_name, body, `
+    <button onclick="closeModal()" class="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Close</button>
+    <button onclick="closeModal();editItem(${id})" class="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold">Edit</button>`);
+}
+
+// ─────────────────────────────────────────
+// Edit / Delete
+// ─────────────────────────────────────────
+function editItem(id) {
+  editingId = id;
+  if (currentSection === 'logins') {
+    const item = data.logins.find(i => i.id === id);
+    openLoginForm(item);
+  } else if (currentSection === 'cards') {
+    const item = data.cards.find(i => i.id === id);
+    openCardForm(item);
+  } else {
+    const item = data.banks.find(i => i.id === id);
+    openBankForm(item);
+  }
+}
+
+function deleteItem(id) {
+  const secLabel = { logins:'password', cards:'card', banks:'bank account' }[currentSection];
+  openModal('Confirm Delete',
+    `<p class="text-slate-600 text-sm">Are you sure you want to delete this ${secLabel}? This action cannot be undone.</p>`,
+    `<button onclick="closeModal()" class="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Cancel</button>
+     <button onclick="confirmDelete(${id})" class="px-4 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold">Delete</button>`);
+}
+
+async function confirmDelete(id) {
+  try {
+    const ep = { logins:'/api/logins', cards:'/api/cards', banks:'/api/banks' }[currentSection];
+    await api(`${ep}/${id}`, 'DELETE');
+    data[currentSection] = data[currentSection].filter(i => i.id !== id);
+    closeModal(); renderItems(); updateBadges();
+    toast('Deleted successfully.', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ─────────────────────────────────────────
+// Boot
+// ─────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
