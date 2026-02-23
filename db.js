@@ -1,7 +1,23 @@
 const { Pool } = require('pg');
 
+if (!process.env.DATABASE_URL) {
+  console.error('\n  ERROR: DATABASE_URL is not set.');
+  console.error('  Create a .env file in the project root with:');
+  console.error('  DATABASE_URL=postgresql://<user>:<password>@<host>:<port>/<dbname>\n');
+  process.exit(1);
+}
+
+// Parse the URL so pg always receives the password as an explicit string,
+// which avoids the "client password must be a string" SASL error when
+// DATABASE_URL is malformed or partially undefined.
+const dbUrl = new URL(process.env.DATABASE_URL);
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  host:     dbUrl.hostname,
+  port:     Number(dbUrl.port) || 5432,
+  database: dbUrl.pathname.slice(1),          // strip leading "/"
+  user:     decodeURIComponent(dbUrl.username),
+  password: decodeURIComponent(dbUrl.password),
   ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : false,
 });
 
