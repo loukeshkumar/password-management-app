@@ -12,13 +12,30 @@ if (!process.env.DATABASE_URL) {
 // DATABASE_URL is malformed or partially undefined.
 const dbUrl = new URL(process.env.DATABASE_URL);
 
+// Resolve SSL from multiple sources (first match wins):
+//   1. DATABASE_SSL env var  — "true" | "strict" | "false"
+//   2. ?sslmode= in the URL  — "require" | "prefer" | "disable"
+// Most cloud providers (Supabase, Neon, Railway, Render, Heroku)
+// append ?sslmode=require to their connection URLs, which we now honour.
+function resolveSsl() {
+  const envSsl  = (process.env.DATABASE_SSL || '').toLowerCase();
+  const urlMode = (dbUrl.searchParams.get('sslmode') || '').toLowerCase();
+
+  if (envSsl === 'strict')                              return true;                        // full cert validation
+  if (envSsl === 'true' || envSsl === '1')              return { rejectUnauthorized: false }; // cloud-friendly
+  if (envSsl === 'false' || envSsl === '0')             return false;                       // explicit off
+  if (urlMode === 'require' || urlMode === 'prefer')    return { rejectUnauthorized: false }; // from URL param
+  if (urlMode === 'disable')                            return false;
+  return false;                                                                              // default: off (localhost)
+}
+
 const pool = new Pool({
   host:     dbUrl.hostname,
   port:     Number(dbUrl.port) || 5432,
-  database: dbUrl.pathname.slice(1),          // strip leading "/"
+  database: dbUrl.pathname.slice(1),           // strip leading "/"
   user:     decodeURIComponent(dbUrl.username),
   password: decodeURIComponent(dbUrl.password),
-  ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : false,
+  ssl:      resolveSsl(),
 });
 
 async function initDb() {
