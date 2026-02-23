@@ -277,6 +277,12 @@ async function copyText(text, label) {
   } catch { toast('Copy failed — please copy manually.', 'error'); }
 }
 
+// Safe wrapper used when a value is embedded in an onclick attribute via
+// encodeURIComponent — avoids quote-breaking issues with special characters.
+function copyEncoded(encoded, label) {
+  copyText(decodeURIComponent(encoded), label);
+}
+
 function toast(msg, type = 'info') {
   const el = document.createElement('div');
   el.className = `toast toast-${type}`;
@@ -499,7 +505,7 @@ function cardHTML(item) {
       </div>
       <div class="flex gap-2 pt-1 border-t border-slate-100">
         <button onclick='viewItem(${item.id})' class="flex-1 text-xs text-indigo-600 hover:bg-indigo-50 py-1.5 rounded-lg font-medium transition-colors">View</button>
-        <button onclick='copyText(${JSON.stringify(item.password)}, "Password")' class="flex-1 text-xs text-slate-600 hover:bg-slate-100 py-1.5 rounded-lg font-medium transition-colors">Copy PW</button>
+        <button onclick='copyEncoded("${encodeURIComponent(item.password)}", "Password")' class="flex-1 text-xs text-slate-600 hover:bg-slate-100 py-1.5 rounded-lg font-medium transition-colors">Copy PW</button>
         <button onclick='editItem(${item.id})' class="flex-1 text-xs text-amber-600 hover:bg-amber-50 py-1.5 rounded-lg font-medium transition-colors">Edit</button>
         <button onclick='deleteItem(${item.id})' class="flex-1 text-xs text-red-500 hover:bg-red-50 py-1.5 rounded-lg font-medium transition-colors">Delete</button>
       </div>`;
@@ -552,7 +558,7 @@ function cardHTML(item) {
       </div>
       <div class="flex gap-2 border-t border-slate-100 pt-3">
         <button onclick='viewItem(${item.id})' class="flex-1 text-xs text-indigo-600 hover:bg-indigo-50 py-1.5 rounded-lg font-medium transition-colors">View</button>
-        <button onclick='copyText(${JSON.stringify(item.account_number)}, "Account number")' class="flex-1 text-xs text-slate-600 hover:bg-slate-100 py-1.5 rounded-lg font-medium transition-colors">Copy Acct</button>
+        <button onclick='copyEncoded("${encodeURIComponent(item.account_number)}", "Account number")' class="flex-1 text-xs text-slate-600 hover:bg-slate-100 py-1.5 rounded-lg font-medium transition-colors">Copy Acct</button>
         <button onclick='editItem(${item.id})' class="flex-1 text-xs text-amber-600 hover:bg-amber-50 py-1.5 rounded-lg font-medium transition-colors">Edit</button>
         <button onclick='deleteItem(${item.id})' class="flex-1 text-xs text-red-500 hover:bg-red-50 py-1.5 rounded-lg font-medium transition-colors">Delete</button>
       </div>`;
@@ -615,9 +621,15 @@ function fieldRow(label, id, opts = {}) {
     </div>`;
 }
 
+// Stores sensitive values by element ID so they are never embedded
+// as raw strings inside HTML onclick attributes (which breaks when
+// values contain quotes or other special characters).
+const _detailStore = {};
+
 function detailRow(label, value, masked = false, copyLabel = '') {
   if (!value && value !== 0) return '';
   const id = 'dr_' + Math.random().toString(36).slice(2);
+  _detailStore[id] = value;
   const displayVal = masked ? mask(value) : esc(value);
   return `
     <div class="flex items-center justify-between py-2.5 border-b border-slate-100 last:border-0">
@@ -626,16 +638,23 @@ function detailRow(label, value, masked = false, copyLabel = '') {
         <p id="${id}" class="text-sm text-slate-800 font-mono mt-0.5 break-all">${displayVal}</p>
       </div>
       <div class="flex gap-1 ml-3 flex-shrink-0">
-        ${masked ? `<button onclick="toggleDetail('${id}', ${JSON.stringify(value)})" class="text-xs text-indigo-500 hover:text-indigo-700 px-2 py-1 rounded hover:bg-indigo-50 font-medium" title="Show/hide">👁</button>` : ''}
-        ${copyLabel ? `<button onclick="copyText(${JSON.stringify(value)}, '${copyLabel}')" class="text-xs text-slate-500 hover:text-slate-700 px-2 py-1 rounded hover:bg-slate-100 font-medium" title="Copy">⎘</button>` : ''}
+        ${masked ? `<button onclick="toggleDetail('${id}')" class="text-xs text-indigo-500 hover:text-indigo-700 px-2 py-1 rounded hover:bg-indigo-50 font-medium" title="Show/hide">👁</button>` : ''}
+        ${copyLabel ? `<button onclick="copyDetailValue('${id}', '${copyLabel}')" class="text-xs text-slate-500 hover:text-slate-700 px-2 py-1 rounded hover:bg-slate-100 font-medium" title="Copy">⎘</button>` : ''}
       </div>
     </div>`;
 }
 
-function toggleDetail(id, value) {
+function toggleDetail(id) {
+  const value = _detailStore[id];
+  if (!value) return;
   const el = document.getElementById(id);
   const isHidden = el.textContent === mask(value);
   el.textContent = isHidden ? value : mask(value);
+}
+
+function copyDetailValue(id, label) {
+  const value = _detailStore[id];
+  if (value) copyText(value, label);
 }
 
 // ─────────────────────────────────────────
