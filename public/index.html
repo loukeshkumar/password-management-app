@@ -76,6 +76,30 @@
     .cat-shopping { background:#fef3c7; color:#92400e; }
     .cat-general  { background:#f3f4f6; color:#374151; }
     .cat-work     { background:#ede9fe; color:#5b21b6; }
+
+    /* ── Mobile sidebar ─────────────────────── */
+    #sidebar-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 30;
+    }
+    #sidebar-overlay.open { display: block; }
+
+    @media (max-width: 767px) {
+      #sidebar {
+        position: fixed !important;
+        left: -260px;
+        top: 0;
+        height: 100%;
+        z-index: 40;
+        width: 240px !important;
+        transition: left 0.25s ease;
+      }
+      #sidebar.open { left: 0; }
+      #toast-container { right: 12px; bottom: 12px; left: 12px; }
+      .toast { min-width: unset; width: 100%; }
+    }
   </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
@@ -125,6 +149,9 @@
 
 <!-- ═══════════════ MAIN APP ═══════════════ -->
 <div id="app" class="hidden flex h-screen overflow-hidden">
+
+  <!-- Mobile sidebar backdrop -->
+  <div id="sidebar-overlay" onclick="closeSidebar()"></div>
 
   <!-- Sidebar -->
   <aside id="sidebar" class="bg-indigo-900 text-white flex flex-col py-6 px-3">
@@ -176,27 +203,32 @@
   <!-- Main content -->
   <div id="main-content" class="flex-1 flex flex-col bg-slate-50">
     <!-- Top bar -->
-    <header class="bg-white border-b border-slate-200 px-6 py-4 flex items-center gap-4 sticky top-0 z-10">
-      <div>
-        <h2 id="section-title" class="text-xl font-bold text-slate-900">Passwords</h2>
-        <p id="section-sub" class="text-xs text-slate-500">Login credentials for your websites &amp; apps</p>
+    <header class="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 sm:py-4 flex flex-wrap items-center gap-3 sticky top-0 z-10">
+      <!-- Hamburger (mobile only) -->
+      <button onclick="openSidebar()" class="md:hidden text-slate-500 hover:text-slate-700 p-1 -ml-1 flex-shrink-0">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+      </button>
+      <div class="flex-1 min-w-0">
+        <h2 id="section-title" class="text-base sm:text-xl font-bold text-slate-900 leading-tight truncate">Passwords</h2>
+        <p id="section-sub" class="text-xs text-slate-500 hidden sm:block truncate">Login credentials for your websites &amp; apps</p>
       </div>
-      <div class="flex-1"></div>
-      <!-- Search -->
-      <div class="relative w-64">
+      <button onclick="openAddModal()"
+        class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 sm:px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-colors flex-shrink-0">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+        </svg>
+        <span class="hidden sm:inline">Add New</span>
+      </button>
+      <!-- Search (full width on mobile, fixed on desktop) -->
+      <div class="relative w-full sm:w-56 order-last sm:order-none">
         <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
         </svg>
         <input id="search-input" type="text" placeholder="Search…" oninput="renderItems()"
           class="w-full border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:border-indigo-400 bg-slate-50" />
       </div>
-      <button onclick="openAddModal()"
-        class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-colors">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-        </svg>
-        Add New
-      </button>
     </header>
 
     <!-- Items grid -->
@@ -443,6 +475,7 @@ const sectionMeta = {
 
 function switchSection(sec) {
   currentSection = sec;
+  closeSidebar();
   document.querySelectorAll('.nav-item').forEach(el => {
     el.classList.toggle('active', el.dataset.section === sec);
   });
@@ -749,7 +782,7 @@ async function saveLogin() {
 function openCardForm(item = null) {
   const body = `
     ${fieldRow('Bank Name', 'f_bank_name', { placeholder: 'e.g. HDFC Bank', value: item?.bank_name })}
-    <div class="grid grid-cols-2 gap-3">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
       ${fieldRow('Card Type', 'f_card_type', { value: item?.card_type || 'debit', options: [
         { value:'debit', label:'Debit' }, { value:'credit', label:'Credit' }
       ]})}
@@ -760,7 +793,7 @@ function openCardForm(item = null) {
     </div>
     ${fieldRow('Card Holder Name', 'f_card_holder_name', { placeholder: 'Name on card', value: item?.card_holder_name, required: true })}
     ${fieldRow('Card Number', 'f_card_number', { placeholder: '•••• •••• •••• ••••', value: item?.card_number, required: true, hint: 'Stored encrypted — never shared.' })}
-    <div class="grid grid-cols-2 gap-3">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
       ${fieldRow('Expiry Date', 'f_expiry_date', { placeholder: 'MM/YY', value: item?.expiry_date, required: true })}
       ${fieldRow('CVV', 'f_cvv', { type: 'password', placeholder: '•••', value: item?.cvv, required: true })}
     </div>
@@ -809,7 +842,7 @@ async function saveCard() {
 function openBankForm(item = null) {
   const body = `
     ${fieldRow('Bank Name', 'f_bank_name', { placeholder: 'e.g. State Bank of India', value: item?.bank_name, required: true })}
-    <div class="grid grid-cols-2 gap-3">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
       ${fieldRow('Branch Name', 'f_branch_name', { placeholder: 'e.g. MG Road Branch', value: item?.branch_name })}
       ${fieldRow('Account Type', 'f_account_type', { value: item?.account_type || 'savings', options: [
         { value:'savings', label:'Savings' }, { value:'current', label:'Current' }, { value:'salary', label:'Salary' }, { value:'fd', label:'Fixed Deposit' }
@@ -944,6 +977,18 @@ async function confirmDelete(id) {
     closeModal(); renderItems(); updateBadges();
     toast('Deleted successfully.', 'success');
   } catch (e) { toast(e.message, 'error'); }
+}
+
+// ─────────────────────────────────────────
+// Mobile sidebar
+// ─────────────────────────────────────────
+function openSidebar() {
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sidebar-overlay').classList.add('open');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('open');
 }
 
 // ─────────────────────────────────────────
