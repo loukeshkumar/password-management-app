@@ -308,8 +308,14 @@ async function api(path, method = 'GET', body = null) {
 // Init
 // ─────────────────────────────────────────
 async function init() {
-  const status = await api('/api/auth/status');
-  isSetup = status.isSetup;
+  try {
+    const status = await api('/api/auth/status');
+    isSetup = status.isSetup;
+  } catch {
+    // If the status check fails (server not ready, network error, etc.)
+    // default to showing the unlock screen rather than crashing silently.
+    isSetup = false;
+  }
 
   if (!isSetup) {
     showSetupUI();
@@ -380,8 +386,8 @@ async function handleLockAction() {
     showLockError(e.message);
   } finally {
     btn.disabled = false;
-    document.getElementById('lock-btn-text').textContent = isSetup ? 'Unlock Vault' : 'Create Vault';
-    btn.innerHTML = `<span id="lock-btn-text">${isSetup ? 'Unlock Vault' : 'Create Vault'}</span>`;
+    const label = isSetup ? 'Unlock Vault' : 'Create Vault';
+    btn.innerHTML = `<span id="lock-btn-text">${label}</span>`;
   }
 }
 
