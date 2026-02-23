@@ -1,6 +1,6 @@
 const express  = require('express');
 const router   = express.Router();
-const db       = require('../db');
+const { pool } = require('../db');
 const { encrypt, decrypt } = require('../crypto-utils');
 const auth     = require('../middleware/auth');
 
@@ -20,51 +20,71 @@ function decryptRow(key, row) {
   };
 }
 
-router.get('/', (req, res) => {
-  const rows = db.prepare('SELECT * FROM login_credentials ORDER BY website_name COLLATE NOCASE').all();
-  res.json(rows.map(r => decryptRow(req.encryptionKey, r)));
+router.get('/', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT * FROM login_credentials ORDER BY LOWER(website_name)'
+    );
+    res.json(rows.map(r => decryptRow(req.encryptionKey, r)));
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.get('/:id', (req, res) => {
-  const row = db.prepare('SELECT * FROM login_credentials WHERE id = ?').get(req.params.id);
-  if (!row) return res.status(404).json({ error: 'Not found' });
-  res.json(decryptRow(req.encryptionKey, row));
+router.get('/:id', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT * FROM login_credentials WHERE id = $1', [req.params.id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Not found' });
+    res.json(decryptRow(req.encryptionKey, rows[0]));
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { website_name, website_url, category, username, password, notes } = req.body;
   if (!website_name || !username || !password) {
     return res.status(400).json({ error: 'website_name, username, and password are required' });
   }
   const k = req.encryptionKey;
-  const result = db.prepare(`
-    INSERT INTO login_credentials (website_name, website_url, category, username, password, notes)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(website_name, website_url || null, category || 'general',
-         encrypt(k, username), encrypt(k, password), notes ? encrypt(k, notes) : null);
-  res.status(201).json({ id: result.lastInsertRowid });
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO login_credentials (website_name, website_url, category, username, password, notes)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [website_name, website_url || null, category || 'general',
+       encrypt(k, username), encrypt(k, password), notes ? encrypt(k, notes) : null]
+    );
+    res.status(201).json({ id: rows[0].id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.put('/:id', (req, res) => {
-  const row = db.prepare('SELECT id FROM login_credentials WHERE id = ?').get(req.params.id);
-  if (!row) return res.status(404).json({ error: 'Not found' });
+router.put('/:id', async (req, res) => {
   const { website_name, website_url, category, username, password, notes } = req.body;
   const k = req.encryptionKey;
-  db.prepare(`
-    UPDATE login_credentials
-    SET website_name=?, website_url=?, category=?, username=?, password=?, notes=?, updated_at=CURRENT_TIMESTAMP
-    WHERE id=?
-  `).run(website_name, website_url || null, category || 'general',
-         encrypt(k, username), encrypt(k, password), notes ? encrypt(k, notes) : null,
-         req.params.id);
-  res.json({ message: 'Updated' });
+  try {
+    const check = await pool.query(
+      'SELECT id FROM login_credentials WHERE id = $1', [req.params.id]
+    );
+    if (!check.rows[0]) return res.status(404).json({ error: 'Not found' });
+    await pool.query(
+      `UPDATE login_credentials
+       SET website_name=$1, website_url=$2, category=$3, username=$4, password=$5, notes=$6, updated_at=CURRENT_TIMESTAMP
+       WHERE id=$7`,
+      [website_name, website_url || null, category || 'general',
+       encrypt(k, username), encrypt(k, password), notes ? encrypt(k, notes) : null,
+       req.params.id]
+    );
+    res.json({ message: 'Updated' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.delete('/:id', (req, res) => {
-  const row = db.prepare('SELECT id FROM login_credentials WHERE id = ?').get(req.params.id);
-  if (!row) return res.status(404).json({ error: 'Not found' });
-  db.prepare('DELETE FROM login_credentials WHERE id = ?').run(req.params.id);
-  res.json({ message: 'Deleted' });
+router.delete('/:id', async (req, res) => {
+  try {
+    const check = await pool.query(
+      'SELECT id FROM login_credentials WHERE id = $1', [req.params.id]
+    );
+    if (!check.rows[0]) return res.status(404).json({ error: 'Not found' });
+    await pool.query('DELETE FROM login_credentials WHERE id = $1', [req.params.id]);
+    res.json({ message: 'Deleted' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 module.exports = router;
